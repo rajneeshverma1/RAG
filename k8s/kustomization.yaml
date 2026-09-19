@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - redis.yaml
+  - server.yaml
+  - worker-drive-fetch.yaml
+  - worker-drive-vectorize.yaml
+  - keda-scaledobjects.yaml
+
+images:
+  - name: my-registry/biscuit-server
+    newName: DOCKERHUB_IMAGE/biscuit-server
+    newTag: IMAGE_TAG
+  - name: my-registry/biscuit-worker-drive-fetch
+    newName: DOCKERHUB_IMAGE/biscuit-worker-drive-fetch
+    newTag: IMAGE_TAG
+  - name: my-registry/biscuit-worker-drive-vectorize
+    newName: DOCKERHUB_IMAGE/biscuit-worker-drive-vectorize
+    newTag: IMAGE_TAG

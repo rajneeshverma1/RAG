@@ -1,0 +1,129 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run migrations
+        run: pnpm --filter @repo/db db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Docker login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Server
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./apps/server/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-server:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-server:latest
+
+      - name: Build and push Worker Drive Fetch
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./apps/worker-drive-fetch/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-worker-drive-fetch:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-worker-drive-fetch:latest
+
+      - name: Build and push Worker Drive Vectorize
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./apps/worker-drive-vectorize/Dockerfile
+          push: true
+          tags: |
+             ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-worker-drive-vectorize:${{ github.sha }}
+             ${{ secrets.DOCKERHUB_USERNAME }}/biscuit-worker-drive-vectorize:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Create app directory on VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p ~/biscuit-agent
+            mkdir -p ~/biscuit-agent/k8s
+
+      - name: Copy k8s manifests to vm
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SSH_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "k8s/*"
+          target: "~/biscuit-agent/"
+
+      - name: Deploy to Kubernetes via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            export KUBECONFIG=~/.kube/config
+            cd ~/biscuit-agent/k8s
+
+            # Set up the secrets for K8s
+            kubectl create secret generic biscuit-secrets \
+              --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              --from-literal=REDIS_URL="${{ secrets.REDIS_URL }}" \
+              --from-literal=GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+              --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              --from-literal=GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
+              --from-literal=FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
+              --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+              --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              --from-literal=TAVILY_API_KEY="${{ secrets.TAVILY_API_KEY }}" \
+              --from-literal=QDRANT_URL="${{ secrets.QDRANT_URL }}" \
+              --from-literal=QDRANT_API_KEY="${{ secrets.QDRANT_API_KEY }}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            # Update Kustomize image tags
+            sed -i "s|DOCKERHUB_IMAGE|${{ secrets.DOCKERHUB_USERNAME }}|g" kustomization.yaml
+            sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kustomization.yaml
+
+            # Apply the manifest
+            kubectl apply -k .
+
+            # Restart deployments to ensure new configs pick up
+            kubectl rollout restart deployment server worker-drive-fetch worker-drive-vectorize

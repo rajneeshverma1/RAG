@@ -1,0 +1,41 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-drive-fetch-scaler
+  labels:
+    app: worker-drive-fetch
+spec:
+  scaleTargetRef:
+    name: worker-drive-fetch
+  pollingInterval: 15
+  cooldownPeriod:  30
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  triggers:
+  - type: redis-streams
+    metadata:
+      addressFromEnv: REDIS_URL
+      stream: "drive_fetch:0"           # Stream Name
+      consumerGroup: "drive-fetch-workers"  # Consumer Group
+      pendingEntriesCount: "5"          # Scale up per 5 pending entries
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-drive-vectorize-scaler
+  labels:
+    app: worker-drive-vectorize
+spec:
+  scaleTargetRef:
+    name: worker-drive-vectorize
+  pollingInterval: 15
+  cooldownPeriod:  30
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  triggers:
+  - type: redis-streams
+    metadata:
+      addressFromEnv: REDIS_URL
+      stream: "drive_vectorize:0"           # Stream Name
+      consumerGroup: "drive-vectorize-workers"  # Consumer Group
+      pendingEntriesCount: "5"              # Scale up per 5 pending entries
