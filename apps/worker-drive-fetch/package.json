@@ -1,0 +1,31 @@
+{
+  "name": "worker-drive-fetch",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit",
+    "dev": "tsx --watch src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@repo/db": "workspace:*",
+    "@repo/redis": "workspace:*",
+    "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
+    "googleapis": "^171.4.0",
+    "mammoth": "^1.11.0",
+    "pdfjs-dist": "^5.4.624"
+  }
+}
